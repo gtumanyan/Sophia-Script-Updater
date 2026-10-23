@@ -1,4 +1,4 @@
-﻿<#
+<#
 	.SYNOPSIS
 	Download the latest Sophia Script version from the last commit available, depending on which Windows or PowerShell versions are used to
 
@@ -60,13 +60,13 @@ switch ([int](Get-CimInstance -Namespace root/CIMV2 -ClassName Win32_OperatingSy
 				$Version = "Sophia_Script_for_Windows_11_LTSC_2024_PowerShell_7"
 			}
 		}
-		elseif ((Get-CimInstance -ClassName CIM_Processor).Caption -match "ARM") {
+		elseif ((Get-CimInstance -Namespace root/CIMV2 -ClassName CIM_Processor).Architecture -eq 12) {
 			# Windows 11 Arm
 			if ($PSVersionTable.PSVersion.Major -eq 5) {
-				$Version = "Sophia_Script_for_Windows_11_ARM"
+				$Version = "Sophia_Script_for_Windows_11_Arm"
 			}
 			else {
-				$Version = "Sophia_Script_for_Windows_11_ARM_PowerShell_7"
+				$Version = "Sophia_Script_for_Windows_11_Arm_PowerShell_7"
 			}
 		}
 		else {
@@ -108,54 +108,74 @@ try {
 		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Module/Manifest/SophiaScript.psd1"      = 'Module\Manifest\SophiaScript.psd1';
 		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Import-TabCompletion.ps1"               = 'Import-TabCompletion.ps1';
 	}
+	
 	ForEach ($file in $myHash.GetEnumerator()) {
-		# 1. Абсолютный путь назначения (в папке скрипта)
+		# Абсолютный путь назначения (в папке скрипта)
 		$destinationPath = Join-Path -Path $PSScriptRoot\$Version -ChildPath $file.Value
 		Invoke-WebRequest $file.Key -OutFile $destinationPath -ErrorAction Stop -Verbose
 	}
 
 	$binDir = "$PSScriptRoot\$Version\Module\Binaries"
-	if (Test-Path -Path "$binDir\LGPO.exe") {
-		Write-Verbose "Skip LGPO download: found LGPO.exe"
+
+	# LGPO: проверка → скачивание → распаковка
+	$lgpoExe = Join-Path -Path $binDir -ChildPath "LGPO.exe"
+
+	if (-not (Test-Path -LiteralPath $lgpoExe -PathType Leaf)) {
+		$lgpoZip = Join-Path -Path $env:TEMP -ChildPath "LGPO.zip"
+
+		Invoke-WebRequest `
+			-Uri "https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip" `
+			-OutFile $lgpoZip `
+			-UseBasicParsing `
+			-ErrorAction Stop `
+			-Verbose
+
+		& $tarExe -xvf $lgpoZip -C $binDir `
+			--strip-components=1 "LGPO_30/LGPO.exe"
+
+		if ($LASTEXITCODE -ne 0 -or
+			-not (Test-Path -LiteralPath $lgpoExe -PathType Leaf)) {
+			throw "Не удалось извлечь LGPO.exe из '$lgpoZip'."
+		}
+
+		Remove-Item -LiteralPath $lgpoZip -Force -ErrorAction SilentlyContinue
 	}
 	else {
-		# Download LGPO
-		# https://techcommunity.microsoft.com/t5/microsoft-security-baselines/lgpo-exe-local-group-policy-object-utility-v1-0/ba-p/701045
-		$Parameters = @{
-			Uri             = "https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip"
-			OutFile         = "$env:temp\LGPO.zip"
-			UseBasicParsing = $true
-			Verbose         = $true
-		}
-		Invoke-WebRequest @Parameters
-		# Extract LGPO.exe
-		& "$env:SystemRoot\System32\tar.exe" -xvf "$env:temp\LGPO.zip" -C "$PSScriptRoot\$Version\Module\Binaries" --strip-components=1 "LGPO_30/LGPO.exe"
+		Write-Verbose "LGPO.exe найден — загрузка и распаковка пропущены." -Verbose
+	}
 
-		if ($Version -match "PowerShell_7") {
-			# Extract Microsoft.Windows.SDK.NET.dll & WinRT.Runtime.dll
-			& "$env:SystemRoot\System32\tar.exe" -xvf "$env:temp\microsoft.windows.sdk.net.ref.zip" -C "$PSScriptRoot\$Version\Module\Binaries" --strip-components=2 "lib/net9.0/WinRT.Runtime.dll" "lib/net9.0/Microsoft.Windows.SDK.NET.dll"
-		}
+	# SDK DLL проверяются независимо от наличия LGPO.exe
+	if ($Version -match "PowerShell_7") {
+		$sdkDll = Join-Path -Path $binDir -ChildPath "Microsoft.Windows.SDK.NET.dll"
+		$winRtDll = Join-Path -Path $binDir -ChildPath "WinRT.Runtime.dll"
 
-		$Path = @(
-			"$env:temp\LGPO.zip",
-			"$env:temp\microsoft.windows.sdk.net.ref.zip"
-		)
-		Remove-Item -Path $Path -Recurse -Force -ErrorAction Ignore
+		if (-not (Test-Path -LiteralPath $sdkDll -PathType Leaf) -or
+			-not (Test-Path -LiteralPath $winRtDll -PathType Leaf)) {
 
-		if ($Version -match "PowerShell_7") {
-			$sdkDll = Join-Path $binDir "Microsoft.Windows.SDK.NET.dll"
-			$winRtDll = Join-Path $binDir "WinRT.Runtime.dll"
-			if (-not (Test-Path $sdkDll) -or -not (Test-Path $winRtDll)) {
-				# Download Microsoft.Windows.SDK.NET.dll & WinRT.Runtime.dll
-				# https://www.nuget.org/packages/Microsoft.Windows.SDK.NET.Ref
-				$Parameters = @{
-					Uri             = "https://www.nuget.org/api/v2/package/Microsoft.Windows.SDK.NET.Ref"
-					OutFile         = "$env:temp\microsoft.windows.sdk.net.ref.zip"
-					UseBasicParsing = $true
-					Verbose         = $true
-				}
-				Invoke-WebRequest @Parameters
+			$sdkZip = Join-Path -Path $env:TEMP -ChildPath "microsoft.windows.sdk.net.ref.zip"
+
+			Invoke-WebRequest `
+				-Uri "https://www.nuget.org/api/v2/package/Microsoft.Windows.SDK.NET.Ref" `
+				-OutFile $sdkZip `
+				-UseBasicParsing `
+				-ErrorAction Stop `
+				-Verbose
+
+			& $tarExe -xvf $sdkZip -C $binDir `
+				--strip-components=2 `
+				"lib/net9.0/WinRT.Runtime.dll" `
+				"lib/net9.0/Microsoft.Windows.SDK.NET.dll"
+
+			if ($LASTEXITCODE -ne 0 -or
+				-not (Test-Path -LiteralPath $sdkDll -PathType Leaf) -or
+				-not (Test-Path -LiteralPath $winRtDll -PathType Leaf)) {
+				throw "Не удалось извлечь SDK DLL из '$sdkZip'."
 			}
+
+			Remove-Item -LiteralPath $sdkZip -Force -ErrorAction SilentlyContinue
+		}
+		else {
+			Write-Verbose "SDK DLL найдены — загрузка и распаковка пропущены." -Verbose
 		}
 	}
 }
@@ -167,18 +187,27 @@ catch {
 	$DNS = (Get-NetAdapter -InterfaceIndex $InterfaceIndex | Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses
 
 	Write-Warning -Message "You're using $(if ($DNS.Count -gt 1) {$DNS -join ', '} else {$DNS}) DNS records"
+
+	Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
+	Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
+
+	Remove-Item -Path $env:SystemDrive\Sophia_Script_Temp -Recurse -Force
+
+	pause
+	exit
 }
+
 # Set path to Compare tool
-$compare = "$PSScriptRoot\..\..\Programm\Beyond Compare\BCompare.exe"
-$repo      = "farag2/Sophia-Script-for-Windows"
-$branch    = "main"
+$compare = "$PSScriptRoot\..\..\Programm\Beyond Compare\BComp"
+$repo = "farag2/Sophia-Script-for-Windows"
+$branch = "main"
 $localRoot = Join-Path -Path $PSScriptRoot -ChildPath $Version
 
 function Get-GitBlobHash {
 	param ([byte[]]$Bytes)
 
 	$header = [Text.Encoding]::ASCII.GetBytes("blob $($Bytes.Length)`0")
-	$data   = [byte[]]::new($header.Length + $Bytes.Length)
+	$data = [byte[]]::new($header.Length + $Bytes.Length)
 	[Buffer]::BlockCopy($header, 0, $data, 0, $header.Length)
 	[Buffer]::BlockCopy($Bytes, 0, $data, $header.Length, $Bytes.Length)
 
@@ -201,12 +230,26 @@ function Get-LocalGitHashes {
 	@((Get-GitBlobHash $bytes), (Get-GitBlobHash $lf.ToArray())) | Select-Object -Unique
 }
 
+function Get-RemoteCommitDate {
+	param ([string]$RemotePath)
+
+	$uri = "https://api.github.com/repos/$repo/commits" +
+	       "?path=$([uri]::EscapeDataString($RemotePath))&sha=$branch&per_page=1"
+
+	$commit = Invoke-RestMethod -Uri $uri -UseBasicParsing -ErrorAction Stop |
+		Select-Object -First 1
+
+	if (-not $commit) { return $null }
+
+	([datetime]$commit.commit.committer.date).ToUniversalTime()
+}
+
 function Get-RemoteListing {
 	# Один запрос к API: имя файла -> sha
 	param ([string]$RemoteDir)
 
 	$path = (@("src/$Version", $RemoteDir) | Where-Object { $_ }) -join "/"
-	$uri  = "https://api.github.com/repos/$repo/contents/${path}?ref=$branch"
+	$uri = "https://api.github.com/repos/$repo/contents/${path}?ref=$branch"
 
 	$items = Invoke-RestMethod -Uri $uri -UseBasicParsing -ErrorAction Stop
 	$map = @{}
@@ -227,13 +270,27 @@ function Compare-WithRemote {
 		return
 	}
 
+	# 1. Содержимое совпадает: дату не запрашиваем
 	if ((Get-LocalGitHashes -Path $File.FullName) -contains $Listing[$File.Name]) {
 		Write-Verbose "$($File.Name): без изменений" -Verbose
+		return
 	}
-	else {
-		Write-Verbose "$($File.Name): отличается — запуск сравнения" -Verbose
-		& $compare $File.FullName $url
+
+	# 2. Содержимое отличается: сравниваем даты
+	$remoteDate = Get-RemoteCommitDate -RepoPath $path
+	$localDate  = $File.LastWriteTimeUtc
+
+	$fmt = "yyyy-MM-dd HH:mm"
+	$dates = "локально: $($localDate.ToLocalTime().ToString($fmt)), GitHub: " +
+		$(if ($remoteDate) { $remoteDate.ToLocalTime().ToString($fmt) } else { "неизвестно" })
+
+	if ($remoteDate -and $remoteDate -le $localDate) {
+		Write-Verbose "$($File.Name): отличается, но локальная версия новее ($dates). Пропуск" -Verbose
+		return
 	}
+
+	Write-Verbose "$($File.Name): на GitHub новее ($dates). Запуск сравнения" -Verbose
+	& $compare $File.FullName $url
 }
 
 try {
@@ -260,8 +317,6 @@ try {
 catch {
 	Write-Warning "GitHub API недоступен: $($_.Exception.Message)"
 }
-& $compare $PSScriptRoot\$Version\Module\Sophia.psm1 https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Module/Sophia.psm1 
-& $compare $PSScriptRoot\$Version\Sophia.ps1 https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Sophia.ps1
 	
 $script = (Resolve-Path (Join-Path $PSScriptRoot "$Version\Sophia.ps1")).Path
 
@@ -278,36 +333,3 @@ if (-not $IsAdmin) {
 	exit
 }
 & $script
-
-$Signature = @{
-	Namespace        = "WinAPI"
-	Name             = "ForegroundWindow"
-	Language         = "CSharp"
-	MemberDefinition = @"
-[DllImport("user32.dll")]
-public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-[DllImport("user32.dll")]
-[return: MarshalAs(UnmanagedType.Bool)]
-public static extern bool SetForegroundWindow(IntPtr hWnd);
-"@
-}
-
-# PowerShell 7 compiles in memory and has no CompilerParameters argument
-# https://github.com/PowerShell/PowerShell/issues/21070
-if ($PSVersionTable.PSVersion.Major -eq 5) {
-	$Signature.Add("CompilerParameters", $CompilerParameters)
-}
-
-if (-not ("WinAPI.ForegroundWindow" -as [type])) {
-	Add-Type @Signature
-}
-
-Start-Sleep -Seconds 1
-
-Get-Process -Name explorer | Where-Object -FilterScript { $_.MainWindowTitle -match "$($Version)_Latest" } | ForEach-Object -Process {
-	# Show window, if minimized
-	[WinAPI.ForegroundWindow]::ShowWindowAsync($_.MainWindowHandle, 5)
-
-	# Force move the console window to the foreground
-	[WinAPI.ForegroundWindow]::SetForegroundWindow($_.MainWindowHandle)
-} | Out-Null
