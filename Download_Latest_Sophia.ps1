@@ -100,6 +100,8 @@ if (-not $Version) {
 	exit
 }
 
+# New-Item -Path "$env:SystemDrive\Sophia_Script_Temp" -ItemType Directory -Force
+
 try {
 	# Download specific files (Hash Table)
 	$myHash = @{
@@ -112,10 +114,11 @@ try {
 	ForEach ($file in $myHash.GetEnumerator()) {
 		# Абсолютный путь назначения (в папке скрипта)
 		$destinationPath = Join-Path -Path $PSScriptRoot\$Version -ChildPath $file.Value
-		Invoke-WebRequest $file.Key -OutFile $destinationPath -ErrorAction Stop -Verbose
+		Invoke-WebRequest $file.Key -OutFile $destinationPath -Verbose
 	}
 
 	$binDir = "$PSScriptRoot\$Version\Module\Binaries"
+$tarExe = Join-Path -Path $env:SystemRoot -ChildPath "System32\tar.exe"
 
 	# LGPO: проверка → скачивание → распаковка
 	$lgpoExe = Join-Path -Path $binDir -ChildPath "LGPO.exe"
@@ -180,19 +183,13 @@ try {
 	}
 }
 catch {
-	Write-Warning -Message "$($Parameters.Uri) is unreachable. Please check Internet connection or change your DNS records."
+	Write-Error -Message $_
 	Write-Information -MessageData "" -InformationAction Continue
 
 	$InterfaceIndex = (Find-NetRoute -RemoteIPAddress "1.1.1.1" | Select-Object -First 1).InterfaceIndex
 	$DNS = (Get-NetAdapter -InterfaceIndex $InterfaceIndex | Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses
 
 	Write-Warning -Message "You're using $(if ($DNS.Count -gt 1) {$DNS -join ', '} else {$DNS}) DNS records"
-
-	Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
-	Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
-
-	Remove-Item -Path $env:SystemDrive\Sophia_Script_Temp -Recurse -Force
-
 	pause
 	exit
 }
@@ -234,10 +231,10 @@ function Get-RemoteCommitDate {
 	param ([string]$RemotePath)
 
 	$uri = "https://api.github.com/repos/$repo/commits" +
-	       "?path=$([uri]::EscapeDataString($RemotePath))&sha=$branch&per_page=1"
+	"?path=$([uri]::EscapeDataString($RemotePath))&sha=$branch&per_page=1"
 
 	$commit = Invoke-RestMethod -Uri $uri -UseBasicParsing -ErrorAction Stop |
-		Select-Object -First 1
+	Select-Object -First 1
 
 	if (-not $commit) { return $null }
 
@@ -263,7 +260,7 @@ function Compare-WithRemote {
 	param ([IO.FileInfo]$File, [hashtable]$Listing, [string]$RemoteDir)
 
 	$path = (@("src/$Version", $RemoteDir, $File.Name) | Where-Object { $_ }) -join "/"
-	$url  = "https://raw.githubusercontent.com/$repo/refs/heads/$branch/$path"
+	$url = "https://raw.githubusercontent.com/$repo/refs/heads/$branch/$path"
 
 	if (-not $Listing.ContainsKey($File.Name)) {
 		Write-Warning "$($File.Name): отсутствует на GitHub"
@@ -278,11 +275,11 @@ function Compare-WithRemote {
 
 	# 2. Содержимое отличается: сравниваем даты
 	$remoteDate = Get-RemoteCommitDate -RepoPath $path
-	$localDate  = $File.LastWriteTimeUtc
+	$localDate = $File.LastWriteTimeUtc
 
 	$fmt = "yyyy-MM-dd HH:mm"
 	$dates = "локально: $($localDate.ToLocalTime().ToString($fmt)), GitHub: " +
-		$(if ($remoteDate) { $remoteDate.ToLocalTime().ToString($fmt) } else { "неизвестно" })
+	$(if ($remoteDate) { $remoteDate.ToLocalTime().ToString($fmt) } else { "неизвестно" })
 
 	if ($remoteDate -and $remoteDate -le $localDate) {
 		Write-Verbose "$($File.Name): отличается, но локальная версия новее ($dates). Пропуск" -Verbose
