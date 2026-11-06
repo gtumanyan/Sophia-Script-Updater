@@ -1,4 +1,4 @@
-<#
+﻿<#
 	.SYNOPSIS
 	Download the latest Sophia Script version from the last commit available, depending on which Windows or PowerShell versions are used to
 
@@ -45,8 +45,7 @@ switch ([int](Get-CimInstance -Namespace root/CIMV2 -ClassName Win32_OperatingSy
 		# Windows 10
 		if ($PSVersionTable.PSVersion.Major -eq 5) {
 			$Version = "Sophia_Script_for_Windows_10"
-		}
-		else {
+		} else {
 			$Version = "Sophia_Script_for_Windows_10_PowerShell_7"
 		}
 	}
@@ -55,26 +54,21 @@ switch ([int](Get-CimInstance -Namespace root/CIMV2 -ClassName Win32_OperatingSy
 			# Windows 11 LTSC 2024
 			if ($PSVersionTable.PSVersion.Major -eq 5) {
 				$Version = "Sophia_Script_for_Windows_11_LTSC_2024"
-			}
-			else {
+			} else {
 				$Version = "Sophia_Script_for_Windows_11_LTSC_2024_PowerShell_7"
 			}
-		}
-		elseif ((Get-CimInstance -Namespace root/CIMV2 -ClassName CIM_Processor).Architecture -eq 12) {
+		} elseif ((Get-CimInstance -Namespace root/CIMV2 -ClassName CIM_Processor).Architecture -eq 12) {
 			# Windows 11 Arm
 			if ($PSVersionTable.PSVersion.Major -eq 5) {
 				$Version = "Sophia_Script_for_Windows_11_Arm"
-			}
-			else {
+			} else {
 				$Version = "Sophia_Script_for_Windows_11_Arm_PowerShell_7"
 			}
-		}
-		else {
+		} else {
 			# Windows 11
 			if ($PSVersionTable.PSVersion.Major -eq 5) {
 				$Version = "Sophia_Script_for_Windows_11"
-			}
-			else {
+			} else {
 				$Version = "Sophia_Script_for_Windows_11_PowerShell_7"
 			}
 		}
@@ -118,7 +112,7 @@ try {
 	}
 
 	$binDir = "$PSScriptRoot\$Version\Module\Binaries"
-$tarExe = Join-Path -Path $env:SystemRoot -ChildPath "System32\tar.exe"
+	$tarExe = Join-Path -Path $env:SystemRoot -ChildPath "System32\tar.exe"
 
 	# LGPO: проверка → скачивание → распаковка
 	$lgpoExe = Join-Path -Path $binDir -ChildPath "LGPO.exe"
@@ -142,8 +136,7 @@ $tarExe = Join-Path -Path $env:SystemRoot -ChildPath "System32\tar.exe"
 		}
 
 		Remove-Item -LiteralPath $lgpoZip -Force -ErrorAction SilentlyContinue
-	}
-	else {
+	} else {
 		Write-Verbose "LGPO.exe найден — загрузка и распаковка пропущены." -Verbose
 	}
 
@@ -176,13 +169,11 @@ $tarExe = Join-Path -Path $env:SystemRoot -ChildPath "System32\tar.exe"
 			}
 
 			Remove-Item -LiteralPath $sdkZip -Force -ErrorAction SilentlyContinue
-		}
-		else {
+		} else {
 			Write-Verbose "SDK DLL найдены — загрузка и распаковка пропущены." -Verbose
 		}
 	}
-}
-catch {
+} catch {
 	Write-Error -Message $_
 	Write-Information -MessageData "" -InformationAction Continue
 
@@ -310,8 +301,7 @@ try {
 	# Sophia.ps1
 	$root = Get-RemoteListing -RemoteDir ""
 	Compare-WithRemote -File (Get-Item "$localRoot\Sophia.ps1") -Listing $root -RemoteDir ""
-}
-catch {
+} catch {
 	Write-Warning "GitHub API недоступен: $($_.Exception.Message)"
 }
 	
@@ -319,8 +309,7 @@ $script = (Resolve-Path (Join-Path $PSScriptRoot "$Version\Sophia.ps1")).Path
 
 $PowerShellExe = if ($Version -match "PowerShell_7") {
 	Join-Path -Path $PSHOME -ChildPath "pwsh.exe"
-}
-else {
+} else {
 	Join-Path -Path $PSHOME -ChildPath "powershell.exe"
 }
 
