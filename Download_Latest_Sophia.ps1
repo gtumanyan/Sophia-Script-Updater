@@ -18,15 +18,10 @@ if ($Host.Version.Major -eq 5) {
 	$Script:ProgressPreference = "SilentlyContinue"
 
 	[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-
-	# https://github.com/PowerShell/PowerShell/issues/21070
-	$Script:CompilerParameters = [System.CodeDom.Compiler.CompilerParameters]::new("System.dll")
-	$Script:CompilerParameters.TempFiles = [System.CodeDom.Compiler.TempFileCollection]::new($env:TEMP, $false)
-	$Script:CompilerParameters.GenerateInMemory = $true
 }
 
 $ProductName = Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name ProductName
-$Version = $null
+$Version     = $null
 
 switch ([int](Get-CimInstance -Namespace root/CIMV2 -ClassName Win32_OperatingSystem).BuildNumber) {
 	17763 {
@@ -49,15 +44,25 @@ switch ([int](Get-CimInstance -Namespace root/CIMV2 -ClassName Win32_OperatingSy
 			$Version = "Sophia_Script_for_Windows_10_PowerShell_7"
 		}
 	}
-	{ $_ -gt 19045 } {
-		if ($ProductName -match "LTSC 2024") {
-			# Windows 11 LTSC 2024
-			if ($PSVersionTable.PSVersion.Major -eq 5) {
+	26100
+	{
+		# Windows 11 LTSC 2024
+		if ($ProductName -match "LTSC 2024")
+		{
+			if ($PSVersionTable.PSVersion.Major -eq 5)
+			{
 				$Version = "Sophia_Script_for_Windows_11_LTSC_2024"
-			} else {
+			}
+			else
+			{
 				$Version = "Sophia_Script_for_Windows_11_LTSC_2024_PowerShell_7"
 			}
-		} elseif ((Get-CimInstance -Namespace root/CIMV2 -ClassName CIM_Processor).Architecture -eq 12) {
+		}
+	}
+	{$_ -ge 26300}
+	{
+		if ((Get-CimInstance -Namespace root/CIMV2 -ClassName CIM_Processor).Architecture -eq 12)
+		{
 			# Windows 11 Arm
 			if ($PSVersionTable.PSVersion.Major -eq 5) {
 				$Version = "Sophia_Script_for_Windows_11_Arm"
@@ -90,18 +95,16 @@ if (-not $Version) {
 	Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
 	Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
 
-	pause
-	exit
+	# Stop silently: "exit" would close the console if the function was called via Import-TabCompletion.ps1
+	throw [System.Management.Automation.PipelineStoppedException]::new()
 }
-
-# New-Item -Path "$env:SystemDrive\Sophia_Script_Temp" -ItemType Directory -Force
 
 try {
 	# Download specific files (Hash Table)
 	$myHash = @{
 		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Module/Localizations/en-US/Sophia.psd1" = 'Module\Localizations\en-US\Sophia.psd1';
 		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Module/Localizations/ru-RU/Sophia.psd1" = 'Module\Localizations\ru-RU\Sophia.psd1';
-		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Module/Manifest/SophiaScript.psd1"      = 'Module\Manifest\SophiaScript.psd1';
+		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Module/SophiaScript.psd1"               = 'Module\SophiaScript.psd1';
 		"https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/refs/heads/main/src/$Version/Import-TabCompletion.ps1"               = 'Import-TabCompletion.ps1';
 	}
 	
@@ -156,11 +159,8 @@ try {
 				-UseBasicParsing `
 				-ErrorAction Stop `
 				-Verbose
-
-			& $tarExe -xvf $sdkZip -C $binDir `
-				--strip-components=2 `
-				"lib/net9.0/WinRT.Runtime.dll" `
-				"lib/net9.0/Microsoft.Windows.SDK.NET.dll"
+			# Extract Microsoft.Windows.SDK.NET.dll & WinRT.Runtime.dll
+			& $tarExe -xvf $sdkZip -C $binDir --strip-components=2 "lib/net9.0/WinRT.Runtime.dll" "lib/net9.0/Microsoft.Windows.SDK.NET.dll"
 
 			if ($LASTEXITCODE -ne 0 -or
 				-not (Test-Path -LiteralPath $sdkDll -PathType Leaf) -or
@@ -180,9 +180,9 @@ try {
 	$InterfaceIndex = (Find-NetRoute -RemoteIPAddress "1.1.1.1" | Select-Object -First 1).InterfaceIndex
 	$DNS = (Get-NetAdapter -InterfaceIndex $InterfaceIndex | Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses
 
-	Write-Warning -Message "You're using $(if ($DNS.Count -gt 1) {$DNS -join ', '} else {$DNS}) DNS records"
-	pause
-	exit
+	Write-Warning -Message "You're using $(if ($DNS.Count -gt 1) {$DNS -join ', '} else {$DNS}) DNS servers"
+	# Stop silently: "exit" would close the console if the function was called via Import-TabCompletion.ps1
+	throw [System.Management.Automation.PipelineStoppedException]::new()
 }
 
 # Set path to Compare tool
